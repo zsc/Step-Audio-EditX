@@ -4,6 +4,7 @@
 </p>
 
 <div align="center">
+    <a href="https://stepaudiollm.github.io/step-audio-editx/"><img src="https://img.shields.io/static/v1?label=Demo%20Page&message=Web&color=green"></a> &ensp;
   <a href="https://arxiv.org/abs/2511.03601"><img src="https://img.shields.io/static/v1?label=Tech%20Report&message=Arxiv&color=red"></a> &ensp;
   <a href="https://huggingface.co/stepfun-ai/Step-Audio-EditX"><img src="https://img.shields.io/static/v1?label=Step-Audio-EditX&message=HuggingFace&color=yellow"></a> &ensp;
   <a href="https://huggingface.co/spaces/stepfun-ai/Step-Audio-EditX"><img src="https://img.shields.io/static/v1?label=Space%20Playground&message=HuggingFace&color=yellow"></a> &ensp;
@@ -37,14 +38,15 @@ We are open-sourcing Step-Audio-EditX, a powerful LLM-based audio model speciali
   - Remarkably effective iterative control over emotions and styles, supporting **dozens** of options for editing.
     - Emotion Control : [ *Angry*, *Happy*, *Sad*, *Excited*, *Fearful*, *Surprised*, *Disgusted*, etc. ]
     - Speaking Style Control: [ *Act_coy*, *Older*, *Child*, *Whisper*, *Serious*, *Generous*, *Exaggerated*, etc.]
-    - More emotional and stylistic controls are on the way. **Get Ready!** 🔥  
+    - More emotional and speaking style controls are on the way. **Get Ready!** 🚀 
     
 - **Paralinguistic Editing**:
   -  Precise control over 10 types of paralinguistic features for more natural, human-like, and expressive synthetic audio.
   - Supporting Tags:
     - [ *Breathing*, *Laughter*, *Suprise-oh*, *Confirmation-en*, *Uhm*, *Suprise-ah*, *Suprise-wa*, *Sigh*, *Question-ei*, *Dissatisfaction-hnn* ]
 
-  
+For more examples, see [demo page](https://stepaudiollm.github.io/step-audio-editx/).
+
 ## Model Download
 
 | Models   | 🤗 Hugging Face | ModelScope |
