@@ -228,16 +228,18 @@ class EditxTab:
                         label="Input Audio",
                     )
                     self.generated_text = gr.Textbox(label="Target Text", lines=1, max_lines=200, max_length=100)
-                    with gr.Row():
-                        self.button_tts = gr.Button("CLONE")
-                        self.button_edit = gr.Button("EDIT")
-
                 with gr.Column():
                     with gr.Row():
                         self.edit_type = gr.Dropdown(label="Task", choices=self.edit_type_list, value="clone")
                         self.edit_info = gr.Dropdown(label="Sub-task", choices=[], value=None)
                     self.chat_box = gr.Chatbot(label="History", type="messages", height=480*1)
-                    self.clean_history_submit = gr.Button("Clear History")
+            with gr.Row():
+                with gr.Column():
+                    with gr.Row():
+                        self.button_tts = gr.Button("CLONE", variant="primary")
+                        self.button_edit = gr.Button("EDIT", variant="primary")
+                with gr.Column():
+                    self.clean_history_submit = gr.Button("Clear History", variant="primary")
 
             gr.Markdown("---")
             gr.Markdown("""
@@ -289,7 +291,15 @@ class EditxTab:
 
 def launch_demo(args, editx_tab):
     """Launch the gradio demo"""
-    with gr.Blocks(theme=gr.themes.Soft(), title="🎙️ Step-Audio-EditX") as demo:
+    with gr.Blocks(
+            theme=gr.themes.Soft(), 
+            title="🎙️ Step-Audio-EditX",
+            css="""
+    :root {
+        --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    """) as demo:
         gr.Markdown("## 🎙️ Step-Audio-EditX")
         gr.Markdown("Audio Editing and Zero-Shot Cloning using Step-Audio-EditX")
 
