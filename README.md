@@ -20,11 +20,11 @@ We are open-sourcing Step-Audio-EditX, a powerful LLM-based audio model speciali
 ## 📑 Open-source Plan
 - [x] Inference Code
 - [x] Online demo (Gradio)
-- [ ] -Edit-Benchmark
+- [ ] Step-Audio-Edit-Benchmark
 - [x] Model Checkpoints
-  - [x] -Tokenizer
-  - [x] -EditX
-  - [ ] -EditX-Int8
+  - [x] Step-Audio-Tokenizer
+  - [x] Step-Audio-EditX
+  - [ ] Step-Audio-EditX-Int8
 - [ ] Training Code
   - [ ] SFT training
   - [ ] PPO training
@@ -53,8 +53,8 @@ For more examples, see [demo page](https://stepaudiollm.github.io/step-audio-edi
 
 | Models   | 🤗 Hugging Face | ModelScope |
 |-------|-------|-------|
-| -EditX | [stepfun-ai/-EditX](https://huggingface.co/stepfun-ai/-EditX) | [stepfun-ai/-EditX](https://modelscope.cn/models/stepfun-ai/-EditX) |
-| -Tokenizer | [stepfun-ai/-Tokenizer](https://huggingface.co/stepfun-ai/-Tokenizer) | [stepfun-ai/-Tokenizer](https://modelscope.cn/models/stepfun-ai/-Tokenizer) |
+| Step-Audio-EditX | [stepfun-ai/Step-Audio-EditX](https://huggingface.co/stepfun-ai/Step-Audio-EditX) | [stepfun-ai/Step-Audio-EditX](https://modelscope.cn/models/stepfun-ai/Step-Audio-EditX) |
+| Step-Audio-Tokenizer | [stepfun-ai/Step-Audio-Tokenizer](https://huggingface.co/stepfun-ai/Step-Audio-Tokenizer) | [stepfun-ai/Step-Audio-Tokenizer](https://modelscope.cn/models/stepfun-ai/Step-Audio-Tokenizer) |
 
 
 ## Model Usage
