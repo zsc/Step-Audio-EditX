@@ -346,9 +346,33 @@ if __name__ == "__main__":
         default=None,
         help="TTS model ID for online loading (if different from model-path)"
     )
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["int4", "int8"],
+        help="Enable quantization for the TTS model to reduce memory usage."
+             "Choices: int4 (online), int8 (online)."
+             "When quantization is enabled, data types are handled automatically by the quantization library."
+    )
+    parser.add_argument(
+        "--torch-dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16", "float32"],
+        help="PyTorch data type for model operations. This setting only applies when quantization is disabled. "
+             "When quantization is enabled, data types are managed automatically."
+    )
+    parser.add_argument(
+        "--device-map",
+        type=str,
+        default="cuda",
+        help="Device mapping for model loading (default: cuda)"
+    )
 
     args = parser.parse_args()
 
+    # Map string arguments to actual types
     source_mapping = {
         "auto": ModelSource.AUTO,
         "local": ModelSource.LOCAL,
@@ -357,11 +381,23 @@ if __name__ == "__main__":
     }
     model_source = source_mapping[args.model_source]
 
+    # Map torch dtype string to actual torch dtype
+    dtype_mapping = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32
+    }
+    torch_dtype = dtype_mapping[args.torch_dtype]
+
     logger.info(f"Loading models with source: {args.model_source}")
     logger.info(f"Model path: {args.model_path}")
     logger.info(f"Tokenizer model ID: {args.tokenizer_model_id}")
+    logger.info(f"Torch dtype: {args.torch_dtype}")
+    logger.info(f"Device map: {args.device_map}")
     if args.tts_model_id:
         logger.info(f"TTS model ID: {args.tts_model_id}")
+    if args.quantization:
+        logger.info(f"🔧 {args.quantization.upper()} quantization enabled")
 
     # Initialize models
     try:
@@ -378,7 +414,10 @@ if __name__ == "__main__":
             os.path.join(args.model_path, "Step-Audio-EditX"),
             encoder,
             model_source=model_source,
-            tts_model_id=args.tts_model_id
+            tts_model_id=args.tts_model_id,
+            quantization_config=args.quantization,
+            torch_dtype=torch_dtype,
+            device_map=args.device_map
         )
         logger.info("✓ StepCommonAudioTTS loaded successfully")
 

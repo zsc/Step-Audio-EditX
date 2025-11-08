@@ -63,7 +63,7 @@ The following table shows the requirements for running Step-Audio-EditX model (b
 
 |     Model    | Parameters |  Setting<br/>(sample frequency) | GPU Optimal Memory  |
 |------------|------------|--------------------------------|----------------|
-| Step-Audio-EditX   | 3B|         41.6Hz          |       32 GB        |
+| Step-Audio-EditX   | 3B|         41.6Hz          |       12 GB        |
 
 * An NVIDIA GPU with CUDA support is required.
   * The model is tested on a single L40S GPU.
@@ -114,11 +114,23 @@ docker run --rm --gpus all \
 
 #### Launch Web Demo
 Start a local server for online inference.
-Assume you have one GPU with at least 32GB memory available and have already downloaded all the models.
+Assume you have one GPU with at least 12GB memory available and have already downloaded all the models.
 
 ```bash
 # Step-Audio-EditX demo
-python app.py --model-path where_you_download_dir --model-source local 
+python app.py --model-path where_you_download_dir --model-source local
+
+# Memory-efficient options with quantization
+# For systems with limited GPU memory, you can use quantization to reduce memory usage:
+
+# INT8 quantization
+python app.py --model-path where_you_download_dir --model-source local --quantization int8
+
+# INT4 quantization
+python app.py --model-path where_you_download_dir --model-source local --quantization int4
+
+# Example with custom settings:
+python app.py --model-path where_you_download_dir --model-source local --torch-dtype float16
 ```
 
 #### Local Inference Demo

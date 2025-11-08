@@ -60,7 +60,10 @@ class StepAudioTTS:
         model_path,
         audio_tokenizer,
         model_source=ModelSource.AUTO,
-        tts_model_id=None
+        tts_model_id=None,
+        quantization_config=None,
+        torch_dtype=torch.bfloat16,
+        device_map="cuda"
     ):
         """
         Initialize StepAudioTTS
@@ -70,6 +73,9 @@ class StepAudioTTS:
             audio_tokenizer: Audio tokenizer for wav2token processing
             model_source: Model source (auto/local/modelscope/huggingface)
             tts_model_id: TTS model ID, if None use model_path
+            quantization_config: Quantization configuration ('int4', 'int8', or None)
+            torch_dtype: PyTorch data type for model weights (default: torch.bfloat16)
+            device_map: Device mapping for model (default: "cuda")
         """
         # Determine model ID or path to load
         if tts_model_id is None:
@@ -87,8 +93,9 @@ class StepAudioTTS:
             self.llm, self.tokenizer, model_path = model_loader.load_transformers_model(
                 tts_model_id,
                 source=model_source,
-                torch_dtype=torch.bfloat16,
-                device_map="cuda"
+                quantization_config=quantization_config,
+                torch_dtype=torch_dtype,
+                device_map=device_map
             )
             logger.info(f"✅ Successfully loaded LLM and tokenizer: {tts_model_id}")
         except Exception as e:
@@ -99,6 +106,9 @@ class StepAudioTTS:
         self.cosy_model = CosyVoice(
             os.path.join(model_path, "CosyVoice-300M-25Hz")
         )
+
+        # Print final GPU memory usage after all models are loaded
+        logger.info("🎤 CosyVoice model loaded successfully")
 
         # Use system prompts from config module
         self.edit_clone_sys_prompt_tpl = AUDIO_EDIT_CLONE_SYSTEM_PROMPT_TPL
