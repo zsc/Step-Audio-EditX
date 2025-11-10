@@ -300,25 +300,16 @@ class EditxTab:
 
     def transcribe_audio(self, audio_input, current_text):
         """Transcribe audio using Whisper ASR when prompt text is empty"""
-        global whisper_asr
-
         # Only transcribe if current text is empty
         if current_text and current_text.strip():
             return current_text  # Keep existing text
-
         if not audio_input:
             return ""  # No audio to transcribe
+        if whisper_asr is None:
+            self.logger.error("Whisper ASR not initialized.")
+            return ""
 
         try:
-            # Initialize whisper if not already loaded
-            if whisper_asr is None:
-                if args_global is None:
-                    self.logger.error("Global args not set. Cannot initialize Whisper.")
-                    return ""
-
-                whisper_asr = WhisperWrapper()
-                self.logger.info("✓ WhisperWrapper initialized for ASR")
-
             # Transcribe audio
             transcribed_text = whisper_asr(audio_input)
             self.logger.info(f"Audio transcribed: {transcribed_text}")
