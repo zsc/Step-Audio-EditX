@@ -13,6 +13,7 @@ from tokenizer import StepAudioTokenizer
 from tts import StepAudioTTS
 from model_loader import ModelSource
 from config.edit_config import get_supported_edit_types
+from whisper_wrapper import WhisperWrapper
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -44,6 +45,7 @@ class EditxTab:
         self.args = args
         self.edit_type_list = list(get_supported_edit_types().keys())
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.enable_auto_transcribe = getattr(args, 'enable_auto_transcribe', False)
 
     def history_messages_to_show(self, messages):
         """Convert message history to gradio chatbot format"""
@@ -281,12 +283,50 @@ class EditxTab:
             outputs=self.edit_info,
         )
 
+        # Add audio transcription event only if enabled
+        if self.enable_auto_transcribe:
+            self.prompt_audio_input.change(
+                fn=self.transcribe_audio,
+                inputs=[self.prompt_audio_input, self.prompt_text_input],
+                outputs=self.prompt_text_input,
+            )
+
     def update_edit_info(self, category):
         """Update sub-task dropdown based on main task selection"""
         category_items = get_supported_edit_types()
         choices = category_items.get(category, [])
         value = None if len(choices) == 0 else choices[0]
         return gr.Dropdown(label="Sub-task", choices=choices, value=value)
+
+    def transcribe_audio(self, audio_input, current_text):
+        """Transcribe audio using Whisper ASR when prompt text is empty"""
+        global whisper_asr
+
+        # Only transcribe if current text is empty
+        if current_text and current_text.strip():
+            return current_text  # Keep existing text
+
+        if not audio_input:
+            return ""  # No audio to transcribe
+
+        try:
+            # Initialize whisper if not already loaded
+            if whisper_asr is None:
+                if args_global is None:
+                    self.logger.error("Global args not set. Cannot initialize Whisper.")
+                    return ""
+
+                whisper_asr = WhisperWrapper()
+                self.logger.info("✓ WhisperWrapper initialized for ASR")
+
+            # Transcribe audio
+            transcribed_text = whisper_asr(audio_input)
+            self.logger.info(f"Audio transcribed: {transcribed_text}")
+            return transcribed_text
+
+        except Exception as e:
+            self.logger.error(f"Failed to transcribe audio: {e}")
+            return ""
 
 
 def launch_demo(args, editx_tab):
@@ -369,6 +409,12 @@ if __name__ == "__main__":
         default="cuda",
         help="Device mapping for model loading (default: cuda)"
     )
+    parser.add_argument(
+        "--enable-auto-transcribe",
+        action="store_true",
+        help="Enable automatic audio transcription when uploading audio files (default: disabled)"
+    )
+    parser.set_defaults(enable_auto_transcribe=True)
 
     args = parser.parse_args()
 
@@ -420,7 +466,10 @@ if __name__ == "__main__":
             device_map=args.device_map
         )
         logger.info("✓ StepCommonAudioTTS loaded successfully")
-
+        
+        if args.enable_auto_transcribe:
+            whisper_asr = WhisperWrapper()
+            logger.info("✓ Automatic audio transcription enabled")
     except Exception as e:
         logger.error(f"❌ Error loading models: {e}")
         logger.error("Please check your model paths and source configuration.")
