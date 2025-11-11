@@ -3,6 +3,7 @@ import os
 import argparse
 import torch
 import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 from datetime import datetime
 import torchaudio
 import librosa
@@ -16,7 +17,6 @@ from config.edit_config import get_supported_edit_types
 from whisper_wrapper import WhisperWrapper
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Save audio to temporary directory
