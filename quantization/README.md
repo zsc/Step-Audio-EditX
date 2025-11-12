@@ -79,7 +79,7 @@ The quantized model is immediately ready for inference and can be loaded using s
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Sufficient RAM for model loading
 - CUDA-compatible GPU (recommended for larger models)
 
