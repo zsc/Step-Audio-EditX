@@ -17,7 +17,7 @@
 * Nov 06, 2025: 👋 We release the technical report of [Step-Audio-EditX](https://arxiv.org/abs/2511.03601).
 
 ## Introduction
-We are open-sourcing Step-Audio-EditX, a powerful **3B-parameter** LLM-based **reinforcement learning** audio model specialized in expressive and iterative audio editing. It excels at editing emotion, speaking style, and paralinguistics, and also features robust zero-shot text-to-speech (TTS) capabilities. 
+We are open-sourcing Step-Audio-EditX, a powerful **3B-parameter** LLM-based **Reinforcement Learning** audio model specialized in expressive and iterative audio editing. It excels at editing emotion, speaking style, and paralinguistics, and also features robust zero-shot text-to-speech (TTS) capabilities. 
 
 ## 📑 Open-source Plan
 - [x] Inference Code
