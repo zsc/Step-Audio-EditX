@@ -486,10 +486,11 @@ Audio-Edit enables iterative control over emotion and speaking style across all 
 
 ## Acknowledgements
 
-Part of the code for this project comes from:
+Part of the code and data for this project comes from:
 * [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
 * [transformers](https://github.com/huggingface/transformers)
 * [FunASR](https://github.com/modelscope/FunASR)
+* [NVSpeech](https://huggingface.co/datasets/amphion/Emilia-NV)
 
 Thank you to all the open-source projects for their contributions to this project!
 
