@@ -45,7 +45,7 @@ We are open-sourcing Step-Audio-EditX, a powerful **3B-parameter** LLM-based **R
 ## Features
 - **Zero-Shot TTS**
   - Excellent zero-shot TTS cloning for Mandarin, English, Sichuanese, and Cantonese.
-  - To use a dialect, just add a **[Sichuanese]** or **[Cantonese]** tag before your text.
+  - To use dialect or other languages, just add a **`[Sichuanese]`** / **`[Cantonese]`** / **`[Japanese]`** / **`[Korean]`** tag before your text.
   - 🔥 Polyphone pronunciation control, all you need to do is replace the polyphonic characters with pinyin.
     - **[我也想过过过儿过过的生活]** -> **[我也想guo4guo4guo1儿guo4guo4的生活]**
  
