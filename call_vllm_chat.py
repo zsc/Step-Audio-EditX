@@ -6,16 +6,27 @@ from tokenizer import StepAudioTokenizer
 from tts import StepAudioTTS
 from model_loader import ModelSource
 
-def get_wav_token_str(prompt_wav_path):
-    prompt_wav, _ = torchaudio.load(prompt_wav_path)
-    vq0206_codes, vq02_codes_ori, vq06_codes_ori, speech_feat, _, speech_embedding = (
-        preprocess_prompt_wav(prompt_wav_path)
-    )
-    prompt_speaker = self.generate_clone_voice_id(prompt_text, prompt_wav)
-    prompt_wav_tokens = self.audio_tokenizer.merge_vq0206_to_token_str(
+
+def wav_path_to_token_str(audio_tokenizer, prompt_wav_path : str):
+    prompt_wav, prompt_wav_sr = torchaudio.load(prompt_wav_path)
+    if prompt_wav.shape[0] > 1:
+        prompt_wav = prompt_wav.mean(dim=0, keepdim=True)  # 将多通道音频转换为单通道
+
+    # volume-normalize avoid clipping
+    norm = torch.max(torch.abs(prompt_wav), dim=1, keepdim=True)[0]
+    if norm > 0.6: # hard code;  max absolute value is 0.6
+        prompt_wav = prompt_wav / norm * 0.6
+
+    _, vq02_codes_ori, vq06_codes_ori = audio_tokenizer.wav2token(prompt_wav, prompt_wav_sr)
+    prompt_wav_tokens = audio_tokenizer.merge_vq0206_to_token_str(
         vq02_codes_ori, vq06_codes_ori
     )
-    token_ids = self._encode_audio_edit_clone_prompt(
+
+    return prompt_wav_tokens # token_str
+
+
+def prepare_prompt(audio_tokenizer, prompt_wav_path, prompt_speaker=""):
+    token_ids = _encode_audio_edit_clone_prompt(
         target_text,
         prompt_text,
         prompt_speaker,
@@ -42,23 +53,12 @@ if __name__ == "__main__":
     model_source = ModelSource.LOCAL
     tokenizer_model_id = 'dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online'
     # Load StepAudioTokenizer
-    encoder = StepAudioTokenizer(
-        os.path.join(model_path, "Step-Audio-Tokenizer"),
+    audio_tokenizer = StepAudioTokenizer(
+        "/root/Step-Audio-Tokenizer",
         model_source=model_source,
         funasr_model_id=tokenizer_model_id
     )
     #logger.info("✓ StepAudioTokenizer loaded successfully")
-
-    # Initialize common TTS engine directly
-    common_tts_engine = StepAudioTTS(
-        '/.autodl/stepfun-ai/Step-Audio-EditX',
-        encoder,
-        model_source=model_source,
-        tts_model_id=args.tts_model_id,
-        quantization_config=args.quantization,
-        torch_dtype=torch_dtype,
-        device_map=args.device_map
-    )
 
     speaker = ""
     prompt_text = "我觉得这个计划大概是可行的，不过还需要再仔细考虑一下。"
