@@ -1,10 +1,12 @@
 import argparse
 from openai import OpenAI
 import torchaudio
+import torch
 
 from tokenizer import StepAudioTokenizer
 from tts import StepAudioTTS
 from model_loader import ModelSource
+from config.prompts import AUDIO_EDIT_CLONE_SYSTEM_PROMPT_TPL
 
 
 def wav_path_to_token_str(audio_tokenizer, prompt_wav_path : str):
@@ -25,13 +27,20 @@ def wav_path_to_token_str(audio_tokenizer, prompt_wav_path : str):
     return prompt_wav_tokens # token_str
 
 
-def prepare_prompt(audio_tokenizer, prompt_wav_path, prompt_speaker=""):
-    token_ids = _encode_audio_edit_clone_prompt(
-        target_text,
-        prompt_text,
-        prompt_speaker,
-        prompt_wav_tokens,
+def prepare_prompt(target_text, prompt_text, prompt_speaker, prompt_wav_tokens):
+    prompt = AUDIO_EDIT_CLONE_SYSTEM_PROMPT_TPL.format(
+        speaker=prompt_speaker,
+        prompt_text=prompt_text,
+        prompt_wav_tokens=prompt_wav_tokens
     )
+    messages = [
+        {
+            "role": "system",
+            "content": prompt,
+        },
+        {"role": "user", "content": target_text},
+    ]
+    return messages
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -62,22 +71,13 @@ if __name__ == "__main__":
 
     speaker = ""
     prompt_text = "我觉得这个计划大概是可行的，不过还需要再仔细考虑一下。"
+    target_text = "Testing the audio generation capabilities."
+    prompt_wav_path = "examples/en_happy_prompt.wav"
 
-    messages = [
-        {
-            "role": "system",
-            "content": f'''Generate audio with the following timbre, prosody and speaking style
+    prompt_wav_tokens = wav_path_to_token_str(audio_tokenizer, prompt_wav_path)
 
-[speaker_start]
-speaker name: {speaker}
-speaker prompt text: 
-{prompt_text}
-speaker audio tokens: 
-{prompt_wav_tokens}
-[speaker_end]''',
-        },
-        {"role": "user", "content": ""},
-    ]
+    messages = prepare_prompt(target_text, prompt_text, speaker, prompt_wav_tokens)
+
     completion = client.chat.completions.create(
         model=args.model_name,
         messages=messages,
