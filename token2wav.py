@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument(
         "--tokens", 
         type=str, 
-        default="<audio_958><audio_101><audio_2216><audio_1028><audio_2892>",
+        default="<audio_958><audio_101><audio_2216><audio_1028><audio_2892><audio_101><audio_465><audio_2430><audio_2036><audio_2036><audio_253><audio_204><audio_2866><audio_1042><audio_2357><audio_204><audio_35><audio_4302><audio_3270><audio_2592><audio_196><audio_196><audio_3160><audio_2160><audio_3820><audio_196><audio_403><audio_1392><audio_2760><audio_1210><audio_502><audio_502><audio_2998><audio_3113><audio_3113><audio_836><audio_836><audio_1382><audio_2124><audio_5088><audio_966><audio_748><audio_3820><audio_1738><audio_2664><audio_748><audio_762><audio_2809><audio_1564><audio_2427><audio_410><audio_410><audio_3561><audio_4569><audio_1093><audio_866><audio_681><audio_1445><audio_1475><audio_2366><audio_239><audio_206><audio_3728><audio_1784><audio_3759><audio_866><audio_772><audio_1513><audio_1093><audio_1986><audio_772><audio_772><audio_1065><audio_1399><audio_4264><audio_631><audio_133><audio_3347><audio_1172><audio_1270><audio_792><audio_866><audio_3196><audio_3227><audio_1083><audio_224><audio_681><audio_2341><audio_2146><audio_1782><audio_63><audio_842><audio_3330><audio_1233><audio_3634><audio_866><audio_681><audio_3392><audio_1556><audio_1040><audio_758><audio_922><audio_1040><audio_4953><audio_1062><audio_922><audio_936><audio_2608><audio_2062><audio_2062><audio_918><audio_918><audio_1915><audio_1042><audio_1042><audio_313><audio_631><audio_2866><audio_4171><audio_1888><audio_631><audio_497><audio_2981><audio_2528><audio_2528>",
         help="Audio token string (e.g. '<audio_123><audio_456>')."
     )
     parser.add_argument(
@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument(
         "--model-path", 
         type=str, 
-        default=None,
+        default="/.autodl/stepfun-ai/Step-Audio-EditX/",
         help="Path to the model directory containing 'CosyVoice-300M-25Hz'. If not set, tries to detect or use default locations."
     )
     parser.add_argument(
@@ -66,39 +66,6 @@ def parse_args():
     )
 
     return parser.parse_args()
-
-
-
-def get_model_path(provided_path):
-    """
-    Resolve the model path.
-    """
-    # Common paths to check if not provided
-    candidates = [
-        "/.autodl/stepfun-ai/",
-        "StepAudio/Step-Audio-TTS-3B", # HuggingFace/ModelScope ID
-    ]
-    
-    if provided_path:
-        candidates.insert(0, provided_path)
-        
-    for path in candidates:
-        if not path: continue
-        
-        # If it looks like a local path
-        if os.path.exists(path) or path.startswith("/"):
-             if os.path.exists(path):
-                 return path
-             # If it's an absolute path but doesn't exist, we skip unless it was the user provided one?
-             # But if user provided it and it doesn't exist, we might want to try to download if it looks like an ID.
-             if path == provided_path:
-                 # If user provided a path/ID, let model_loader handle it if it's not a simple non-existent local path
-                 return path 
-        else:
-             # It's a model ID
-             return path
-             
-    return "StepAudio/Step-Audio-TTS-3B" # Default fallback
 
 def preprocess_prompt_wav(cosy_model, audio_tokenizer, prompt_wav_path):
     """
@@ -156,37 +123,16 @@ def main():
 
     # 3. Load CosyVoice Model
     logger.info("Loading CosyVoice model...")
-    base_model_path = get_model_path(args.model_path)
+    base_model_path = args.model_path
     
     # Use model_loader to resolve/download if necessary, but we only want the path
     # We cheat by calling detect_model_source. If it's not local, we trigger a download.
     source = model_loader.detect_model_source(base_model_path)
     final_model_path = base_model_path
     
-    if source != ModelSource.LOCAL:
-        logger.info(f"Model {base_model_path} detected as {source}. Downloading if not cached...")
-        try:
-            final_model_path = model_loader._cached_snapshot_download(base_model_path, source)
-        except Exception as e:
-            logger.error(f"Failed to download model: {e}")
-            return
-    
     # Locate CosyVoice folder
     cosy_model_path = os.path.join(final_model_path, "CosyVoice-300M-25Hz")
-    if not os.path.exists(cosy_model_path):
-        # Fallback: maybe the user pointed directly to the inner folder?
-        if os.path.exists(os.path.join(final_model_path, "cosyvoice.yaml")):
-            cosy_model_path = final_model_path
-        else:
-            logger.warning(f"CosyVoice-300M-25Hz subfolder not found in {final_model_path}. Trying root.")
-            cosy_model_path = final_model_path
-
-    try:
-        cosy_model = CosyVoice(cosy_model_path)
-        logger.info(f"CosyVoice loaded from {cosy_model_path}")
-    except Exception as e:
-        logger.error(f"Failed to load CosyVoice: {e}")
-        return
+    cosy_model = CosyVoice(cosy_model_path)
 
     # 4. Preprocess Prompt
     try:
