@@ -642,14 +642,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # If a HuggingFace model ID is provided as a URL, download it to the model_path directory.
+	# Determine the specific directory name for the TTS model
+    model_dir_name = "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX"
+    tts_model_path_local = os.path.join(args.model_path, model_dir_name)
+
+    # If a HuggingFace model ID is provided as a URL, download it to the tts_model_path_local directory.
     if args.tts_model_id and "huggingface.co" in args.tts_model_id:
         repo_id = args.tts_model_id.replace("https://huggingface.co/", "")
-        logger.info(f"Downloading model {repo_id} to {args.model_path}...")
+        logger.info(f"Downloading model {repo_id} to {tts_model_path_local}...")
         try:
             snapshot_download(
                 repo_id=repo_id,
-                local_dir=args.model_path,
+                local_dir=tts_model_path_local,
                 local_dir_use_symlinks=False, # Use direct copies
                 resume_download=True
             )
@@ -711,7 +715,6 @@ if __name__ == "__main__":
         logger.info("✓ StepAudioTokenizer loaded successfully")
         
         # Initialize common TTS engine directly from the local model_path
-        tts_model_path_local = os.path.join(args.model_path, "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX")
         common_tts_engine = StepAudioTTS(
             tts_model_path_local,
             common_audio_tokenizer, # Pass the global tokenizer
