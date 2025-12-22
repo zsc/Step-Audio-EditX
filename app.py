@@ -705,3 +705,7 @@ if __name__ == "__main__":
         if args.enable_auto_transcribe:
             whisper_asr = WhisperWrapper()
             logger.info("✓ Automatic audio transcription enabled")
+    except Exception as e:
+        logger.error(f"❌ Error loading models: {e}")
+        logger.error("Please check your model paths and source configuration.")
+        exit(1)
