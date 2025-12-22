@@ -9,6 +9,7 @@ import torchaudio
 import librosa
 import soundfile as sf
 from typing import Optional
+from huggingface_hub import snapshot_download
 
 # Project imports
 from tokenizer import StepAudioTokenizer
@@ -596,7 +597,7 @@ if __name__ == "__main__":
         "--tokenizer-model-id",
         type=str,
         default="dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online",
-        help="Tokenizer model ID for online loading"
+        help="FunASR model ID for the tokenizer."
     )
     parser.add_argument(
         "--tts-model-id",
@@ -635,6 +636,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # If a HuggingFace model ID is provided as a URL, download it to the model_path directory.
+    if args.tts_model_id and "huggingface.co" in args.tts_model_id:
+        repo_id = args.tts_model_id.replace("https://huggingface.co/", "")
+        logger.info(f"Downloading model {repo_id} to {args.model_path}...")
+        try:
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=args.model_path,
+                local_dir_use_symlinks=False, # Use direct copies
+                resume_download=True
+            )
+            logger.info("✓ Model downloaded successfully.")
+        except Exception as e:
+            logger.error(f"❌ Failed to download model from Hugging Face: {e}")
+            exit(1)
+
     # Map string arguments to actual types
     source_mapping = {
         "auto": ModelSource.AUTO,
@@ -652,32 +669,32 @@ if __name__ == "__main__":
     }
     torch_dtype = dtype_mapping[args.torch_dtype]
 
-    logger.info(f"Loading models with source: {args.model_source}")
-    logger.info(f"Model path: {args.model_path}")
+    logger.info(f"Loading models from local path: {args.model_path}")
     logger.info(f"Tokenizer model ID: {args.tokenizer_model_id}")
     logger.info(f"Torch dtype: {args.torch_dtype}")
     logger.info(f"Device map: {args.device_map}")
     if args.tts_model_id:
-        logger.info(f"TTS model ID: {args.tts_model_id}")
+        logger.info(f"TTS model ID (source repo): {args.tts_model_id}")
     if args.quantization:
         logger.info(f"🔧 {args.quantization.upper()} quantization enabled")
 
     # Initialize models
     global common_audio_tokenizer, common_tts_engine, common_cosy_model
     try:
-        # Load StepAudioTokenizer
+        # Load StepAudioTokenizer from the local model_path
         common_audio_tokenizer = StepAudioTokenizer(
             os.path.join(args.model_path, "Step-Audio-Tokenizer"),
             funasr_model_id=args.tokenizer_model_id
         )
         logger.info("✓ StepAudioTokenizer loaded successfully")
         
-        # Initialize common TTS engine directly
+        # Initialize common TTS engine directly from the local model_path
+        tts_model_path_local = os.path.join(args.model_path, "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX")
         common_tts_engine = StepAudioTTS(
-            os.path.join(args.model_path, "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX"),
+            tts_model_path_local,
             common_audio_tokenizer, # Pass the global tokenizer
-            model_source=model_source,
-            tts_model_id=args.tts_model_id,
+            model_source=ModelSource.LOCAL, # Always load from local after downloading
+            tts_model_id=None, # tts_model_id is not needed as we are loading locally
             quantization_config=args.quantization,
             torch_dtype=torch_dtype,
             device_map=args.device_map
@@ -688,13 +705,3 @@ if __name__ == "__main__":
         if args.enable_auto_transcribe:
             whisper_asr = WhisperWrapper()
             logger.info("✓ Automatic audio transcription enabled")
-    except Exception as e:
-        logger.error(f"❌ Error loading models: {e}")
-        logger.error("Please check your model paths and source configuration.")
-        exit(1)
-
-    # Create EditxTab instance
-    editx_tab = EditxTab(args)
-
-    # Launch demo
-    launch_demo(args, editx_tab)
