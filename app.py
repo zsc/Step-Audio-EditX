@@ -600,6 +600,12 @@ if __name__ == "__main__":
         help="FunASR model ID for the tokenizer."
     )
     parser.add_argument(
+        "--audio-tokenizer-repo",
+        type=str,
+        default="stepfun-ai/Step-Audio-Tokenizer",
+        help="Hugging Face repo for the Step-Audio-Tokenizer."
+    )
+    parser.add_argument(
         "--tts-model-id",
         type=str,
         default="https://huggingface.co/stepfun-ai/Step-Audio-EditX", # Default to HF model
@@ -650,6 +656,22 @@ if __name__ == "__main__":
             logger.info("✓ Model downloaded successfully.")
         except Exception as e:
             logger.error(f"❌ Failed to download model from Hugging Face: {e}")
+            exit(1)
+
+    # Download tokenizer model from its own repo if specified
+    if args.audio_tokenizer_repo:
+        tokenizer_local_path = os.path.join(args.model_path, "Step-Audio-Tokenizer")
+        logger.info(f"Downloading audio tokenizer {args.audio_tokenizer_repo} to {tokenizer_local_path}...")
+        try:
+            snapshot_download(
+                repo_id=args.audio_tokenizer_repo,
+                local_dir=tokenizer_local_path,
+                local_dir_use_symlinks=False,
+                resume_download=True
+            )
+            logger.info("✓ Audio tokenizer downloaded successfully.")
+        except Exception as e:
+            logger.error(f"❌ Failed to download audio tokenizer: {e}")
             exit(1)
 
     # Map string arguments to actual types
