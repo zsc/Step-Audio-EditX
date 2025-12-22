@@ -578,7 +578,7 @@ def launch_demo(args, editx_tab):
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Step-Audio Edit Demo")
-    parser.add_argument("--model-path", type=str, required=True, help="Model path.")
+    parser.add_argument("--model-path", type=str, default=os.path.join(os.path.expanduser("~"), ".cache", "StepAudioEditX"), help="Local path to model data and tokenizer assets. Models will be downloaded here if not found.")
     parser.add_argument("--server-name", type=str, default="0.0.0.0", help="Demo server name.")
     parser.add_argument("--server-port", type=int, default=7860, help="Demo server port.")
     parser.add_argument("--tmp-dir", type=str, default="/tmp/gradio", help="Save path.")
@@ -601,7 +601,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tts-model-id",
         type=str,
-        default=None,
+        default="https://huggingface.co/stepfun-ai/Step-Audio-EditX", # Default to HF model
         help="TTS model ID for online loading (if different from model-path)"
     )
     parser.add_argument(
