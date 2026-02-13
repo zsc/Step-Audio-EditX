@@ -1,0 +1,34 @@
+{# step_audio_clone.jinja
+   Step-1 / Step-Audio 风格（<|BOT|> ... <|EOT|>），用于 voice cloning / TTS 指令
+#}
+
+{%- set BOT = '<|BOT|>' -%}
+{%- set EOT = '<|EOT|>' -%}
+
+{%- for message in messages -%}
+  {%- if loop.first -%}
+    {{- bos_token -}}
+    {%- if messages[0]['role'] != 'system' -%}
+      {{- BOT ~ 'system\nYou are a helpful assistant.' ~ EOT -}}
+    {%- endif -%}
+  {%- endif -%}
+
+  {{- BOT ~ (message['role'] if message['role'] != 'user' else 'human') ~ '\n' -}}
+
+  {%- if message['content'] is string -%}
+    {{- message['content'] -}}
+  {%- else -%}
+    {# 兼容 OpenAI content list：只拼 text 部分 #}
+    {%- for part in message['content'] -%}
+      {%- if part['type'] == 'text' -%}
+        {{- part['text'] -}}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+
+  {{- EOT -}}
+{%- endfor -%}
+
+{%- if add_generation_prompt -%}
+  {{- BOT ~ 'assistant\n' -}}
+{%- endif -%}

@@ -8,6 +8,8 @@ from datetime import datetime
 import torchaudio
 import librosa
 import soundfile as sf
+from typing import Optional
+from huggingface_hub import snapshot_download
 
 # Project imports
 from tokenizer import StepAudioTokenizer
@@ -15,9 +17,14 @@ from tts import StepAudioTTS
 from model_loader import ModelSource
 from config.edit_config import get_supported_edit_types
 from whisper_wrapper import WhisperWrapper
+from stepvocoder.cosyvoice2.cli.cosyvoice import CosyVoice
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Global constants for prompt options
+PROMPT_WAV_OPTIONS = ["denoise_prompt.wav", "en_happy_prompt.wav", "fear_zh_female_prompt.wav", "paralingustic_prompt.wav", "speed_prompt.wav", "vad_prompt.wav", "whisper_prompt.wav", "zero_shot_en_prompt.wav"]
+PROMPT_TEXT_MAP = {"zero_shot_en_prompt.wav": "His political stance was conservative, and he was particularly close to margaret thatcher.", "en_happy_prompt.wav": "You know, I just finished that big project and feel so relieved. Everything seems easier and more colorful, what a wonderful feeling!", "fear_zh_female_prompt.wav": "我总觉得，有人在跟着我，我能听到奇怪的脚步声。", "whisper_prompt.wav": "比如在工作间隙，做一些简单的伸展运动，放松一下身体，这样，会让你更有精力.", "paralingustic_prompt.wav": "我觉得这个计划大概是可行的，不过还需要再仔细考虑一下。", "denoise_prompt.wav": "Such legislation was clarified and extended from time to time thereafter. No, the man was not drunk, he wondered how we got tied up with this stranger. Suddenly, my reflexes had gone. It's healthier to cook without sugar.", "speed_prompt.wav": "上次你说鞋子有点磨脚，我给你买了一双软软的鞋垫。", "vad_prompt.wav": "就是说你比如说我一共在这次看病我一共花了一百块钱，其中呢医生的这个劳动价值占了三十块钱。"}
 
 # Save audio to temporary directory
 def save_audio(audio_type, audio_data, sr, tmp_dir):
@@ -30,12 +37,224 @@ def save_audio(audio_type, audio_data, sr, tmp_dir):
         if isinstance(audio_data, torch.Tensor):
             torchaudio.save(save_path, audio_data, sr)
         else:
-            sf.write(save_path, audio_data, sr)
+            sf.write(audio_data, sr)
         logger.debug(f"Audio saved to: {save_path}")
         return save_path
     except Exception as e:
         logger.error(f"Failed to save audio: {e}")
         raise
+
+
+class TokenConversionTab:
+    """Tab for WAV to Token and Token to WAV conversion"""
+
+    def __init__(self, audio_tokenizer, cosy_model, args):
+        self.audio_tokenizer = audio_tokenizer
+        self.cosy_model = cosy_model
+        self.args = args
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def _get_prompt_wav_path(self, prompt_wav_filename):
+        return os.path.join("examples", prompt_wav_filename)
+
+    def _wav_to_token_str(self, input_wav_path, prompt_wav_filename, prompt_text):
+        # prompt_wav_filename and prompt_text are not strictly needed for wav2token but kept for consistent UI signature
+        _ = prompt_wav_filename # Suppress unused warning
+        _ = prompt_text # Suppress unused warning
+
+        if not input_wav_path:
+            return "[Error] Input audio cannot be empty."
+
+        try:
+            # Load input WAV
+            input_wav, input_sr = torchaudio.load(input_wav_path)
+            if input_wav.shape[0] > 1:
+                input_wav = input_wav.mean(dim=0, keepdim=True)
+            
+            # Normalize volume
+            norm = torch.max(torch.abs(input_wav), dim=1, keepdim=True)[0]
+            if norm > 0.6: 
+                input_wav = input_wav / norm * 0.6 
+
+            # Extract tokens
+            vq0206_codes, _, _ = self.audio_tokenizer.wav2token(input_wav, input_sr)
+            
+            # Convert to token string format <audio_N>
+            token_string = "".join([f"<audio_{code}>" for code in vq0206_codes])
+            return token_string
+        except Exception as e:
+            self.logger.error(f"WAV to token conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"[Error] WAV to token conversion failed: {e}"
+
+    def _token_str_to_wav(self, token_string, prompt_wav_filename, prompt_text):
+        # prompt_text is not strictly needed for token2wav but kept for consistent UI signature
+        _ = prompt_text # Suppress unused warning
+
+        if not token_string:
+            return None, "[Error] Token string cannot be empty."
+        if not prompt_wav_filename:
+            return None, "[Error] Prompt WAV cannot be empty."
+        
+        prompt_wav_path = self._get_prompt_wav_path(prompt_wav_filename)
+
+        try:
+            # Preprocess prompt WAV (similar to token2wav.py's preprocess_prompt_wav)
+            prompt_wav, prompt_wav_sr = torchaudio.load(prompt_wav_path)
+            if prompt_wav.shape[0] > 1:
+                prompt_wav = prompt_wav.mean(dim=0, keepdim=True)
+
+            norm = torch.max(torch.abs(prompt_wav), dim=1, keepdim=True)[0]
+            if norm > 0.6: 
+                prompt_wav = prompt_wav / norm * 0.6 
+
+            speech_feat, speech_feat_len = self.cosy_model.frontend.extract_speech_feat(
+                prompt_wav, prompt_wav_sr
+            )
+            speech_embedding = self.cosy_model.frontend.extract_spk_embedding(
+                prompt_wav, prompt_wav_sr
+            )
+            vq0206_codes, _, _ = self.audio_tokenizer.wav2token(prompt_wav, prompt_wav_sr)
+            
+            # Parse input tokens
+            tokens_list = [int(x) for x in re.findall(r"<audio_(\d+)>", token_string)]
+            if not tokens_list:
+                return None, "[Error] No valid tokens found in input string. Format should be <audio_123>..."
+            
+            normalized_tokens = []
+            for t in tokens_list:
+                if t >= 65536: # From token2wav.py, to handle shifted tokens
+                    normalized_tokens.append(t - 65536)
+                else:
+                    normalized_tokens.append(t)
+            token_tensor = torch.tensor([normalized_tokens], dtype=torch.long)
+            
+            prompt_token_tensor = torch.tensor([vq0206_codes], dtype=torch.long)
+            prompt_token_tensor = prompt_token_tensor - 65536 # Also shifted
+
+            # Prepare for generation (dtype casting)
+            if torch.cuda.is_available():
+                speech_feat = speech_feat.to(torch.bfloat16)
+                speech_embedding = speech_embedding.to(torch.bfloat16)
+            else:
+                 speech_feat = speech_feat.to(torch.float32)
+                 speech_embedding = speech_embedding.to(torch.float32)
+
+            # Generate audio
+            out_wav = self.cosy_model.token2wav_nonstream(
+                token_tensor,
+                prompt_token_tensor,
+                speech_feat,
+                speech_embedding,
+            )
+            
+            # Save output WAV temporarily
+            output_audio_path = save_audio("token2wav_output", out_wav, 24000, self.args.tmp_dir)
+            return output_audio_path, "Success"
+
+        except Exception as e:
+            self.logger.error(f"Token string to WAV conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, f"[Error] Token string to WAV conversion failed: {e}"
+
+    def register_components(self):
+        with gr.Tab("Token Conversion") as self.token_conversion_tab: # Store reference for later event binding
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("### WAV to Token String")
+                    self.wav_to_token_input_audio = gr.Audio(
+                        sources=["upload", "microphone"],
+                        type="filepath",
+                        label="Input Audio (WAV to Token)",
+                    )
+                    self.wav_to_token_prompt_wav_dropdown = gr.Dropdown(
+                        label="Prompt WAV",
+                        choices=PROMPT_WAV_OPTIONS,
+                        value=PROMPT_WAV_OPTIONS[0] if PROMPT_WAV_OPTIONS else None
+                    )
+                    self.wav_to_token_prompt_text_output = gr.Textbox(
+                        label="Prompt Text (from selected WAV)",
+                        interactive=False
+                    )
+                    self.wav_to_token_button = gr.Button("Convert WAV to Token String", variant="primary")
+                    self.wav_to_token_output_text = gr.Textbox(
+                        label="Generated Token String",
+                        interactive=True, # Make it editable for user to copy/paste
+                        lines=5
+                    )
+                with gr.Column():
+                    gr.Markdown("### Token String to WAV")
+                    self.token_to_wav_input_text = gr.Textbox(
+                        label="Input Token String",
+                        value="<audio_958><audio_101><audio_2216><audio_1028><audio_2892>",
+                        lines=5
+                    )
+                    self.token_to_wav_prompt_wav_dropdown = gr.Dropdown(
+                        label="Prompt WAV",
+                        choices=PROMPT_WAV_OPTIONS,
+                        value=PROMPT_WAV_OPTIONS[0] if PROMPT_WAV_OPTIONS else None
+                    )
+                    self.token_to_wav_prompt_text_output = gr.Textbox(
+                        label="Prompt Text (from selected WAV)",
+                        interactive=False
+                    )
+                    self.token_to_wav_button = gr.Button("Convert Token String to WAV", variant="primary")
+                    self.token_to_wav_output_audio = gr.Audio(
+                        label="Generated WAV",
+                        streaming=False, # Ensure it's not streaming for final output
+                        autoplay=False
+                    )
+                    # Add a Textbox for error messages for Token to WAV
+                    self.token_to_wav_error_message = gr.Textbox(
+                        label="Error/Status",
+                        interactive=False,
+                        visible=True
+                    )
+
+    def register_events(self):
+        # Initialize prompt text for WAV to Token tab
+        if self.wav_to_token_prompt_wav_dropdown.value:
+            self.wav_to_token_prompt_text_output.value = PROMPT_TEXT_MAP.get(self.wav_to_token_prompt_wav_dropdown.value, "")
+        # Initialize prompt text for Token to WAV tab
+        if self.token_to_wav_prompt_wav_dropdown.value:
+            self.token_to_wav_prompt_text_output.value = PROMPT_TEXT_MAP.get(self.token_to_wav_prompt_wav_dropdown.value, "")
+
+        # Update prompt text when prompt WAV changes for WAV to Token
+        self.wav_to_token_prompt_wav_dropdown.change(
+            fn=lambda x: PROMPT_TEXT_MAP.get(x, ""),
+            inputs=[self.wav_to_token_prompt_wav_dropdown],
+            outputs=[self.wav_to_token_prompt_text_output]
+        )
+        # Update prompt text when prompt WAV changes for Token to WAV
+        self.token_to_wav_prompt_wav_dropdown.change(
+            fn=lambda x: PROMPT_TEXT_MAP.get(x, ""),
+            inputs=[self.token_to_wav_prompt_wav_dropdown],
+            outputs=[self.token_to_wav_prompt_text_output]
+        )
+
+        # WAV to Token conversion
+        self.wav_to_token_button.click(
+            self._wav_to_token_str,
+            inputs=[
+                self.wav_to_token_input_audio,
+                self.wav_to_token_prompt_wav_dropdown, # Passed for consistent signature, but not used in logic
+                self.wav_to_token_prompt_text_output # Passed for consistent signature, but not used in logic
+            ],
+            outputs=[self.wav_to_token_output_text]
+        )
+
+        # Token to WAV conversion
+        self.token_to_wav_button.click(
+            self._token_str_to_wav,
+            inputs=[
+                self.token_to_wav_input_text,
+                self.token_to_wav_prompt_wav_dropdown,
+                self.token_to_wav_prompt_text_output # Passed for consistent signature, but not used in logic
+            ],
+            outputs=[self.token_to_wav_output_audio, self.token_to_wav_error_message]
+        )
 
 
 class EditxTab:
@@ -46,6 +265,9 @@ class EditxTab:
         self.edit_type_list = list(get_supported_edit_types().keys())
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.enable_auto_transcribe = getattr(args, 'enable_auto_transcribe', False)
+
+
+
 
     def history_messages_to_show(self, messages):
         """Convert message history to gradio chatbot format"""
@@ -334,11 +556,17 @@ def launch_demo(args, editx_tab):
         gr.Markdown("## 🎙️ Step-Audio-EditX")
         gr.Markdown("Audio Editing and Zero-Shot Cloning using Step-Audio-EditX")
 
-        # Register components
-        editx_tab.register_components()
+        # Instantiate TokenConversionTab
+        token_conversion_tab = TokenConversionTab(common_audio_tokenizer, common_cosy_model, args)
 
-        # Register events
+        with gr.Tabs(): # Wrap tabs here
+            # Register components for both tabs
+            editx_tab.register_components()
+            token_conversion_tab.register_components() # Register new tab components here
+
+        # Register events for both tabs
         editx_tab.register_events()
+        token_conversion_tab.register_events() # Register new tab events here
 
     # Launch demo
     demo.queue().launch(
@@ -351,7 +579,7 @@ def launch_demo(args, editx_tab):
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Step-Audio Edit Demo")
-    parser.add_argument("--model-path", type=str, required=True, help="Model path.")
+    parser.add_argument("--model-path", type=str, default=os.path.join(os.path.expanduser("~"), ".cache", "StepAudioEditX"), help="Local path to model data and tokenizer assets. Models will be downloaded here if not found.")
     parser.add_argument("--server-name", type=str, default="0.0.0.0", help="Demo server name.")
     parser.add_argument("--server-port", type=int, default=7860, help="Demo server port.")
     parser.add_argument("--tmp-dir", type=str, default="/tmp/gradio", help="Save path.")
@@ -369,12 +597,18 @@ if __name__ == "__main__":
         "--tokenizer-model-id",
         type=str,
         default="dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online",
-        help="Tokenizer model ID for online loading"
+        help="FunASR model ID for the tokenizer."
+    )
+    parser.add_argument(
+        "--audio-tokenizer-repo",
+        type=str,
+        default="stepfun-ai/Step-Audio-Tokenizer",
+        help="Hugging Face repo for the Step-Audio-Tokenizer."
     )
     parser.add_argument(
         "--tts-model-id",
         type=str,
-        default=None,
+        default="https://huggingface.co/stepfun-ai/Step-Audio-EditX", # Default to HF model
         help="TTS model ID for online loading (if different from model-path)"
     )
     parser.add_argument(
@@ -408,6 +642,42 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+	# Determine the specific directory name for the TTS model
+    model_dir_name = "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX"
+    tts_model_path_local = os.path.join(args.model_path, model_dir_name)
+
+    # If a HuggingFace model ID is provided as a URL, download it to the tts_model_path_local directory.
+    if args.tts_model_id and "huggingface.co" in args.tts_model_id:
+        repo_id = args.tts_model_id.replace("https://huggingface.co/", "")
+        logger.info(f"Downloading model {repo_id} to {tts_model_path_local}...")
+        try:
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=tts_model_path_local,
+                local_dir_use_symlinks=False, # Use direct copies
+                resume_download=True
+            )
+            logger.info("✓ Model downloaded successfully.")
+        except Exception as e:
+            logger.error(f"❌ Failed to download model from Hugging Face: {e}")
+            exit(1)
+
+    # Download tokenizer model from its own repo if specified
+    if args.audio_tokenizer_repo:
+        tokenizer_local_path = os.path.join(args.model_path, "Step-Audio-Tokenizer")
+        logger.info(f"Downloading audio tokenizer {args.audio_tokenizer_repo} to {tokenizer_local_path}...")
+        try:
+            snapshot_download(
+                repo_id=args.audio_tokenizer_repo,
+                local_dir=tokenizer_local_path,
+                local_dir_use_symlinks=False,
+                resume_download=True
+            )
+            logger.info("✓ Audio tokenizer downloaded successfully.")
+        except Exception as e:
+            logger.error(f"❌ Failed to download audio tokenizer: {e}")
+            exit(1)
+
     # Map string arguments to actual types
     source_mapping = {
         "auto": ModelSource.AUTO,
@@ -425,36 +695,36 @@ if __name__ == "__main__":
     }
     torch_dtype = dtype_mapping[args.torch_dtype]
 
-    logger.info(f"Loading models with source: {args.model_source}")
-    logger.info(f"Model path: {args.model_path}")
+    logger.info(f"Loading models from local path: {args.model_path}")
     logger.info(f"Tokenizer model ID: {args.tokenizer_model_id}")
     logger.info(f"Torch dtype: {args.torch_dtype}")
     logger.info(f"Device map: {args.device_map}")
     if args.tts_model_id:
-        logger.info(f"TTS model ID: {args.tts_model_id}")
+        logger.info(f"TTS model ID (source repo): {args.tts_model_id}")
     if args.quantization:
         logger.info(f"🔧 {args.quantization.upper()} quantization enabled")
 
     # Initialize models
+    global common_audio_tokenizer, common_tts_engine, common_cosy_model
     try:
-        # Load StepAudioTokenizer
-        encoder = StepAudioTokenizer(
+        # Load StepAudioTokenizer from the local model_path
+        common_audio_tokenizer = StepAudioTokenizer(
             os.path.join(args.model_path, "Step-Audio-Tokenizer"),
-            model_source=model_source,
             funasr_model_id=args.tokenizer_model_id
         )
         logger.info("✓ StepAudioTokenizer loaded successfully")
         
-        # Initialize common TTS engine directly
+        # Initialize common TTS engine directly from the local model_path
         common_tts_engine = StepAudioTTS(
-            os.path.join(args.model_path, "Step-Audio-EditX-AWQ-4bit" if args.quantization == "awq-4bit" else "Step-Audio-EditX"),
-            encoder,
-            model_source=model_source,
-            tts_model_id=args.tts_model_id,
+            tts_model_path_local,
+            common_audio_tokenizer, # Pass the global tokenizer
+            model_source=ModelSource.LOCAL, # Always load from local after downloading
+            tts_model_id=None, # tts_model_id is not needed as we are loading locally
             quantization_config=args.quantization,
             torch_dtype=torch_dtype,
             device_map=args.device_map
         )
+        common_cosy_model = common_tts_engine.cosy_model
         logger.info("✓ StepCommonAudioTTS loaded successfully")
         
         if args.enable_auto_transcribe:
@@ -464,9 +734,3 @@ if __name__ == "__main__":
         logger.error(f"❌ Error loading models: {e}")
         logger.error("Please check your model paths and source configuration.")
         exit(1)
-
-    # Create EditxTab instance
-    editx_tab = EditxTab(args)
-
-    # Launch demo
-    launch_demo(args, editx_tab)
