@@ -85,8 +85,28 @@ class StepAudioTTS:
         logger.info(f"   - model_source: {model_source}")
         logger.info(f"   - model_path: {model_path}")
         logger.info(f"   - tts_model_id: {tts_model_id}")
+        logger.info(f"   - device_map: {device_map}")
 
         self.audio_tokenizer = audio_tokenizer
+        
+        # Store and determine the actual device to use
+        self.device_map = device_map
+        if device_map == "mps":
+            self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        elif device_map == "cuda":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif device_map == "cpu":
+            self.device = torch.device("cpu")
+        else:
+            # For auto or other device_map settings, let accelerate handle it
+            # but we'll default to cuda/mps/cpu for explicit tensor operations
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda")
+            elif torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
+        logger.info(f"   - using device: {self.device}")
 
         # Load LLM and tokenizer using model_loader
         try:
@@ -149,7 +169,7 @@ class StepAudioTTS:
             )
 
             output_ids = self.llm.generate(
-                torch.tensor([token_ids]).to(torch.long).to("cuda"),
+                torch.tensor([token_ids]).to(torch.long).to(self.device),
                 max_length=8192,
                 temperature=0.7,
                 do_sample=True,
@@ -157,13 +177,13 @@ class StepAudioTTS:
             )
             output_ids = output_ids[:, len(token_ids) : -1]  # skip eos token
             logger.debug("Voice cloning generation completed")
-            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long) - 65536
+            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long, device=self.device) - 65536
             return (
                 self.cosy_model.token2wav_nonstream(
                     output_ids - 65536,
                     vq0206_codes_vocoder,
-                    speech_feat.to(torch.bfloat16),
-                    speech_embedding.to(torch.bfloat16),
+                    speech_feat.to(self.device).to(torch.bfloat16),
+                    speech_embedding.to(self.device).to(torch.bfloat16),
                 ),
                 24000,
             )
@@ -212,21 +232,21 @@ class StepAudioTTS:
             logger.debug(f"Encoded prompt length: {len(prompt_tokens)}")
 
             output_ids = self.llm.generate(
-                torch.tensor([prompt_tokens]).to(torch.long).to("cuda"),
+                torch.tensor([prompt_tokens]).to(torch.long).to(self.device),
                 max_length=8192,
                 temperature=0.7,
                 do_sample=True,
                 logits_processor=LogitsProcessorList([RepetitionAwareLogitsProcessor()]),
             )
             output_ids = output_ids[:, len(prompt_tokens) : -1]  # skip eos token
-            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long) - 65536
+            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long, device=self.device) - 65536
             logger.debug("Audio editing generation completed")
             return (
                 self.cosy_model.token2wav_nonstream(
                     output_ids - 65536,
                     vq0206_codes_vocoder,
-                    speech_feat.to(torch.bfloat16),
-                    speech_embedding.to(torch.bfloat16),
+                    speech_feat.to(self.device).to(torch.bfloat16),
+                    speech_embedding.to(self.device).to(torch.bfloat16),
                 ),
                 24000,
             )

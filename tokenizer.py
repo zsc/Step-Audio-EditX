@@ -108,7 +108,10 @@ class StepAudioTokenizer:
 
     def get_vq02_code(self, audio, session_id=None, is_final=True):
         _tmp_wav = io.BytesIO()
-        torchaudio.save(_tmp_wav, audio, 16000, format="wav")
+        # Use soundfile instead of torchaudio to avoid torchcodec BytesIO issues
+        import soundfile as sf
+        audio_np = audio.squeeze().cpu().numpy()
+        sf.write(_tmp_wav, audio_np, 16000, format='WAV')
         _tmp_wav.seek(0)
 
         with self.vq02_lock:
@@ -116,12 +119,13 @@ class StepAudioTokenizer:
             if session_id in self.vq02_sessions:
                 cache = self.vq02_sessions[session_id].get("cache", {})
 
+            # Force FunASR to use CPU (use string "cpu" instead of device index)
             res, new_cache = self.funasr_model.infer_encoder(
                 input=[_tmp_wav],
                 chunk_size=self.chunk_size,
                 encoder_chunk_look_back=self.encoder_chunk_look_back,
                 decoder_chunk_look_back=self.decoder_chunk_look_back,
-                device=0,
+                device="cpu",
                 is_final=is_final,
                 cache=cache,
             )

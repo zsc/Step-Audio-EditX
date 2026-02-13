@@ -242,7 +242,10 @@ class AutoModel:
         kwargs = self.kwargs if kwargs is None else kwargs
         kwargs.update(cfg)
         model = self.model if model is None else model
-        model = model.cuda()
+        # Auto-detect device: cuda > cpu (mps not supported by FunASR well)
+        if torch.cuda.is_available():
+            model = model.cuda()
+        # else: keep on cpu
         model.eval()
 
         batch_size = kwargs.get("batch_size", 1)
@@ -545,7 +548,10 @@ class AutoModel:
         kwargs = self.kwargs if kwargs is None else kwargs
         kwargs.update(cfg)
         model = self.model if model is None else model
-        model = model.cuda()
+        # Auto-detect device: cuda > cpu (mps not supported by FunASR well)
+        if torch.cuda.is_available():
+            model = model.cuda()
+        # else: keep on cpu
         model.eval()
 
         batch_size = kwargs.get("batch_size", 1)
