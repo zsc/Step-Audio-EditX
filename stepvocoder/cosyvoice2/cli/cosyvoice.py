@@ -349,16 +349,11 @@ class CosyVoice:
                  chunk_size_list: List = [15, 24, 48],  # (0.6s, 0.96s, 1.92s) 
                  mel_cache_len: int = 8,
                  n_timesteps: int = 10,
+                 device: Optional[Union[str, torch.device]] = None,
                  enable_cuda_graph: bool = False,
                  dtype=torch.float32,
                  ):
-        # Auto-detect device: cuda > mps > cpu
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            self.device = torch.device("mps")
-        else:
-            self.device = torch.device("cpu")
+        self.device = self._resolve_device(device)
         self.dtype = dtype
         # initiate streaming wrapper
         self.model_dir = model_dir
@@ -381,6 +376,30 @@ class CosyVoice:
             campplus_model='{}/campplus.onnx'.format(model_dir),
             speech_tokenizer_model='{}/speech_tokenizer_v1.onnx'.format(model_dir),
         )
+
+    @staticmethod
+    def _resolve_device(device: Optional[Union[str, torch.device]]) -> torch.device:
+        if device is None:
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+
+        requested_device = str(device).lower().strip()
+        if requested_device == "gpu":
+            requested_device = "cuda"
+        if requested_device in {"auto", "none", ""}:
+            return CosyVoice._resolve_device(None)
+        if requested_device == "cuda":
+            return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        if requested_device == "mps":
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+        if requested_device == "cpu":
+            return torch.device("cpu")
+        return torch.device(requested_device)
     
     # Just proxy
     def token2wav_nonstream(self,

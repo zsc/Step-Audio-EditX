@@ -20,7 +20,7 @@ class StepAudioTokenizer:
         encoder_path,
         model_source=ModelSource.AUTO,
         funasr_model_id="dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online",
-        funasr_device: str = "cpu",
+        funasr_device: str = "auto",
         torch_num_threads: int | None = None,
         cosy_tokenizer_providers: list[str] | None = None,
     ):
@@ -91,10 +91,20 @@ class StepAudioTokenizer:
         self.vq02_lock = threading.Lock()
         self.vq06_lock = threading.Lock()
 
-        requested_device = (funasr_device or "cpu").lower()
+        requested_device = self._normalize_funasr_device(funasr_device)
         if requested_device == "auto":
-            mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-            requested_device = "mps" if mps_available else "cpu"
+            requested_device = self._default_funasr_device()
+
+        if requested_device == "cuda":
+            if not torch.cuda.is_available():
+                print("[StepAudioTokenizer] CUDA not available; falling back to CPU.")
+                requested_device = "cpu"
+            else:
+                try:
+                    self.funasr_model.model = self.funasr_model.model.to("cuda")
+                except Exception as e:
+                    print(f"[StepAudioTokenizer] Failed to move FunASR model to CUDA: {e}. Falling back to CPU.")
+                    requested_device = "cpu"
 
         if requested_device == "mps":
             if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
@@ -107,11 +117,26 @@ class StepAudioTokenizer:
                     print(f"[StepAudioTokenizer] Failed to move FunASR model to MPS: {e}. Falling back to CPU.")
                     requested_device = "cpu"
 
-        if requested_device not in ("cpu", "mps"):
+        if requested_device not in ("cpu", "mps", "cuda"):
             print(f"[StepAudioTokenizer] Unsupported funasr_device={requested_device}; using CPU.")
             requested_device = "cpu"
 
         self.funasr_device = requested_device
+
+    @staticmethod
+    def _normalize_funasr_device(funasr_device: str) -> str:
+        requested_device = (funasr_device or "auto").strip().lower()
+        if requested_device == "gpu":
+            requested_device = "cuda"
+        return requested_device
+
+    @staticmethod
+    def _default_funasr_device() -> str:
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
     def __call__(self, audio, sr):
         _, vq02, vq06 = self.wav2token(audio, sr, False)

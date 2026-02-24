@@ -631,8 +631,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device-map",
         type=str,
-        default="cuda",
-        help="Device mapping for model loading (default: cuda)"
+        default="auto",
+        help="Device mapping for model loading (default: auto; supported: auto, gpu, cuda, mps, cpu)"
+    )
+    parser.add_argument(
+        "--funasr-device",
+        type=str,
+        default="auto",
+        help="Device used by FunASR tokenizer (default: auto; supported: auto, gpu, cuda, mps, cpu)"
     )
     parser.add_argument(
         "--enable-auto-transcribe",
@@ -710,7 +716,8 @@ if __name__ == "__main__":
         # Load StepAudioTokenizer from the local model_path
         common_audio_tokenizer = StepAudioTokenizer(
             os.path.join(args.model_path, "Step-Audio-Tokenizer"),
-            funasr_model_id=args.tokenizer_model_id
+            funasr_model_id=args.tokenizer_model_id,
+            funasr_device=args.funasr_device
         )
         logger.info("✓ StepAudioTokenizer loaded successfully")
         

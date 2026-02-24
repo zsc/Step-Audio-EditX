@@ -63,7 +63,7 @@ class StepAudioTTS:
         tts_model_id=None,
         quantization_config=None,
         torch_dtype=torch.bfloat16,
-        device_map="cuda"
+        device_map="auto"
     ):
         """
         Initialize StepAudioTTS
@@ -75,7 +75,7 @@ class StepAudioTTS:
             tts_model_id: TTS model ID, if None use model_path
             quantization_config: Quantization configuration ('int4', 'int8', or None)
             torch_dtype: PyTorch data type for model weights (default: torch.bfloat16)
-            device_map: Device mapping for model (default: "cuda")
+            device_map: Device mapping for model (default: "auto")
         """
         # Determine model ID or path to load
         if tts_model_id is None:
@@ -85,27 +85,13 @@ class StepAudioTTS:
         logger.info(f"   - model_source: {model_source}")
         logger.info(f"   - model_path: {model_path}")
         logger.info(f"   - tts_model_id: {tts_model_id}")
-        logger.info(f"   - device_map: {device_map}")
+        logger.info(f"   - device_map: {device_map} (normalized: {self._normalize_device_map(device_map)})")
 
         self.audio_tokenizer = audio_tokenizer
         
         # Store and determine the actual device to use
-        self.device_map = device_map
-        if device_map == "mps":
-            self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-        elif device_map == "cuda":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        elif device_map == "cpu":
-            self.device = torch.device("cpu")
-        else:
-            # For auto or other device_map settings, let accelerate handle it
-            # but we'll default to cuda/mps/cpu for explicit tensor operations
-            if torch.cuda.is_available():
-                self.device = torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
-            else:
-                self.device = torch.device("cpu")
+        self.device_map = self._normalize_device_map(device_map)
+        self.device = self._resolve_runtime_device(self.device_map)
         logger.info(f"   - using device: {self.device}")
 
         # Load LLM and tokenizer using model_loader
@@ -115,7 +101,7 @@ class StepAudioTTS:
                 source=model_source,
                 quantization_config=quantization_config,
                 torch_dtype=torch_dtype,
-                device_map=device_map
+                device_map=self.device_map
             )
             logger.info(f"✅ Successfully loaded LLM and tokenizer: {tts_model_id}")
         except Exception as e:
@@ -124,7 +110,8 @@ class StepAudioTTS:
 
         # Load CosyVoice model (usually local path)
         self.cosy_model = CosyVoice(
-            os.path.join(model_path, "CosyVoice-300M-25Hz")
+            os.path.join(model_path, "CosyVoice-300M-25Hz"),
+            device=self.device
         )
 
         # Print final GPU memory usage after all models are loaded
@@ -133,6 +120,29 @@ class StepAudioTTS:
         # Use system prompts from config module
         self.edit_clone_sys_prompt_tpl = AUDIO_EDIT_CLONE_SYSTEM_PROMPT_TPL
         self.edit_sys_prompt = AUDIO_EDIT_SYSTEM_PROMPT
+
+    @staticmethod
+    def _normalize_device_map(device_map: str) -> str:
+        raw_device_map = (device_map or "auto").strip().lower()
+        if raw_device_map == "gpu":
+            return "cuda"
+        if raw_device_map in {"auto", "cuda", "mps", "cpu"}:
+            return raw_device_map
+        return "auto"
+
+    @staticmethod
+    def _resolve_runtime_device(device_map: str) -> torch.device:
+        if device_map == "cuda":
+            return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        if device_map == "mps":
+            return torch.device("mps") if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else torch.device("cpu")
+        if device_map == "cpu":
+            return torch.device("cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
+        return torch.device("cpu")
 
     def clone(
         self,
