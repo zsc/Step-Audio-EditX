@@ -1,4 +1,18 @@
 __pycache__/
+*.pyc
 output/
+output_dir/
 quantization/*.json
 sparse_logs/
+
+# Downloaded model repos / weights (large)
+Step-Audio-EditX/
+Step-Audio-Tokenizer/
+
+# Local media / datasets
+videos/
+try_genshin
+
+# Local one-off files
+label.json
+=*
