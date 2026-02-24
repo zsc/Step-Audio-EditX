@@ -242,9 +242,23 @@ class AutoModel:
         kwargs = self.kwargs if kwargs is None else kwargs
         kwargs.update(cfg)
         model = self.model if model is None else model
-        # Auto-detect device: cuda > cpu (mps not supported by FunASR well)
-        if torch.cuda.is_available():
-            model = model.cuda()
+        target_device = kwargs.get("device")
+        if target_device is None or str(target_device).strip().lower() == "auto":
+            target_device = "cuda" if torch.cuda.is_available() else "cpu"
+        target_device = str(target_device).strip().lower()
+        if target_device == "gpu":
+            target_device = "cuda"
+        if target_device == "cuda":
+            model = model.cuda() if torch.cuda.is_available() else model.cpu()
+        elif target_device == "mps":
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                model = model.to("mps")
+            else:
+                model = model.cpu()
+        elif target_device == "cpu":
+            model = model.cpu()
+        else:
+            model = model.cpu()
         # else: keep on cpu
         model.eval()
 
@@ -548,9 +562,23 @@ class AutoModel:
         kwargs = self.kwargs if kwargs is None else kwargs
         kwargs.update(cfg)
         model = self.model if model is None else model
-        # Auto-detect device: cuda > cpu (mps not supported by FunASR well)
-        if torch.cuda.is_available():
-            model = model.cuda()
+        target_device = kwargs.get("device")
+        if target_device is None or str(target_device).strip().lower() == "auto":
+            target_device = "cuda" if torch.cuda.is_available() else "cpu"
+        target_device = str(target_device).strip().lower()
+        if target_device == "gpu":
+            target_device = "cuda"
+        if target_device == "cuda":
+            model = model.cuda() if torch.cuda.is_available() else model.cpu()
+        elif target_device == "mps":
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                model = model.to("mps")
+            else:
+                model = model.cpu()
+        elif target_device == "cpu":
+            model = model.cpu()
+        else:
+            model = model.cpu()
         # else: keep on cpu
         model.eval()
 

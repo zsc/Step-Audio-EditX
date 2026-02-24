@@ -344,7 +344,7 @@ class WavFrontendOnline(nn.Module):
             feats_lens = []
             for i in range(batch_size):
                 waveform = input[i]
-                if torch.cuda.is_available():
+                if waveform.is_cuda:
                     waveform = waveform.cuda()
                 # we need accurate wave samples that used for fbank extracting
                 waveforms.append(

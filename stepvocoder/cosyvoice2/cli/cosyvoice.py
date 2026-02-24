@@ -399,7 +399,7 @@ class CosyVoice:
             return torch.device("cpu")
         if requested_device == "cpu":
             return torch.device("cpu")
-        return torch.device(requested_device)
+        return torch.device("cpu")
     
     # Just proxy
     def token2wav_nonstream(self,

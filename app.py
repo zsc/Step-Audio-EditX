@@ -635,6 +635,18 @@ if __name__ == "__main__":
         help="Device mapping for model loading (default: auto; supported: auto, gpu, cuda, mps, cpu)"
     )
     parser.add_argument(
+        "--max-length",
+        type=int,
+        default=8192,
+        help="Max generation length for LLM inference."
+    )
+    parser.add_argument(
+        "--cosy-device",
+        type=str,
+        default="auto",
+        help="Device for CosyVoice vocoder (default: follow --device-map)."
+    )
+    parser.add_argument(
         "--funasr-device",
         type=str,
         default="auto",
@@ -729,7 +741,9 @@ if __name__ == "__main__":
             tts_model_id=None, # tts_model_id is not needed as we are loading locally
             quantization_config=args.quantization,
             torch_dtype=torch_dtype,
-            device_map=args.device_map
+            device_map=args.device_map,
+            cosy_device=args.cosy_device,
+            max_length=args.max_length
         )
         common_cosy_model = common_tts_engine.cosy_model
         logger.info("✓ StepCommonAudioTTS loaded successfully")

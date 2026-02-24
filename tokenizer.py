@@ -39,6 +39,7 @@ class StepAudioTokenizer:
                 encoder_path,
                 funasr_model_path,
                 source=model_source,
+                device=self._normalize_funasr_device(funasr_device),
                 model_revision="main",
                 disable_log=True,
             )
@@ -48,6 +49,7 @@ class StepAudioTokenizer:
             self.funasr_model = AutoModel(
                 model=funasr_model_path,
                 model_revision="main",
+                device=self._normalize_funasr_device(funasr_device),
                 disable_log=True,
             )
 
@@ -122,6 +124,7 @@ class StepAudioTokenizer:
             requested_device = "cpu"
 
         self.funasr_device = requested_device
+        self._ensure_funasr_device()
 
     @staticmethod
     def _normalize_funasr_device(funasr_device: str) -> str:
@@ -129,6 +132,32 @@ class StepAudioTokenizer:
         if requested_device == "gpu":
             requested_device = "cuda"
         return requested_device
+
+    def _ensure_funasr_device(self):
+        target_device = self.funasr_device
+        if not hasattr(self.funasr_model, "model"):
+            return
+        try:
+            if target_device == "cpu":
+                self.funasr_model.model = self.funasr_model.model.to("cpu")
+            elif target_device == "cuda":
+                if not torch.cuda.is_available():
+                    print("[StepAudioTokenizer] CUDA not available; falling back to CPU.")
+                    self.funasr_device = "cpu"
+                    self.funasr_model.model = self.funasr_model.model.to("cpu")
+                else:
+                    self.funasr_model.model = self.funasr_model.model.to("cuda")
+            elif target_device == "mps":
+                if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+                    print("[StepAudioTokenizer] MPS not available; falling back to CPU.")
+                    self.funasr_device = "cpu"
+                    self.funasr_model.model = self.funasr_model.model.to("cpu")
+                else:
+                    self.funasr_model.model = self.funasr_model.model.to("mps")
+        except Exception as e:
+            print(f"[StepAudioTokenizer] Failed to move FunASR model to {target_device}: {e}. Falling back to CPU.")
+            self.funasr_device = "cpu"
+            self.funasr_model.model = self.funasr_model.model.to("cpu")
 
     @staticmethod
     def _default_funasr_device() -> str:
@@ -177,9 +206,17 @@ class StepAudioTokenizer:
         # FunASR streaming encoder supports feeding raw waveform tensors directly.
         # Use 1-D float tensor to avoid extra WAV encode/decode overhead.
         if isinstance(audio, torch.Tensor):
-            audio_infer = audio.squeeze(0).to(torch.float32).cpu()
+            audio_infer = audio.squeeze(0).to(torch.float32)
         else:
-            audio_infer = torch.as_tensor(audio).to(torch.float32).flatten().cpu()
+            audio_infer = torch.as_tensor(audio).to(torch.float32).flatten()
+
+        self._ensure_funasr_device()
+        if self.funasr_device == "cuda":
+            audio_infer = audio_infer.to("cuda")
+        elif self.funasr_device == "mps":
+            audio_infer = audio_infer.to("mps")
+        else:
+            audio_infer = audio_infer.to("cpu")
 
         with self.vq02_lock:
             cache = {}

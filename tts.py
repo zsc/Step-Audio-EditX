@@ -63,7 +63,9 @@ class StepAudioTTS:
         tts_model_id=None,
         quantization_config=None,
         torch_dtype=torch.bfloat16,
-        device_map="auto"
+        device_map="auto",
+        cosy_device=None,
+        max_length=8192,
     ):
         """
         Initialize StepAudioTTS
@@ -76,6 +78,7 @@ class StepAudioTTS:
             quantization_config: Quantization configuration ('int4', 'int8', or None)
             torch_dtype: PyTorch data type for model weights (default: torch.bfloat16)
             device_map: Device mapping for model (default: "auto")
+            cosy_device: Device used by CosyVoice (default: follow device_map)
         """
         # Determine model ID or path to load
         if tts_model_id is None:
@@ -86,13 +89,19 @@ class StepAudioTTS:
         logger.info(f"   - model_path: {model_path}")
         logger.info(f"   - tts_model_id: {tts_model_id}")
         logger.info(f"   - device_map: {device_map} (normalized: {self._normalize_device_map(device_map)})")
+        logger.info(f"   - max_length: {max_length}")
 
         self.audio_tokenizer = audio_tokenizer
         
         # Store and determine the actual device to use
         self.device_map = self._normalize_device_map(device_map)
+        self.max_length = max_length
         self.device = self._resolve_runtime_device(self.device_map)
+        self.cosy_device = self._resolve_runtime_device(
+            self._normalize_device_map(cosy_device) if cosy_device else self.device_map
+        )
         logger.info(f"   - using device: {self.device}")
+        logger.info(f"   - cosy device: {self.cosy_device}")
 
         # Load LLM and tokenizer using model_loader
         try:
@@ -109,10 +118,16 @@ class StepAudioTTS:
             raise
 
         # Load CosyVoice model (usually local path)
+        cosy_device_dtype = torch_dtype
+        if str(self.cosy_device) == "cpu":
+            cosy_device_dtype = torch.float32
+
         self.cosy_model = CosyVoice(
             os.path.join(model_path, "CosyVoice-300M-25Hz"),
-            device=self.device
+            device=self.cosy_device,
+            dtype=cosy_device_dtype
         )
+        self.cosy_dtype = getattr(self.cosy_model.cosy_impl, "dtype", cosy_device_dtype)
 
         # Print final GPU memory usage after all models are loaded
         logger.info("🎤 CosyVoice model loaded successfully")
@@ -180,20 +195,22 @@ class StepAudioTTS:
 
             output_ids = self.llm.generate(
                 torch.tensor([token_ids]).to(torch.long).to(self.device),
-                max_length=8192,
+                max_length=self.max_length,
                 temperature=0.7,
                 do_sample=True,
                 logits_processor=LogitsProcessorList([RepetitionAwareLogitsProcessor()]),
             )
             output_ids = output_ids[:, len(token_ids) : -1]  # skip eos token
             logger.debug("Voice cloning generation completed")
-            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long, device=self.device) - 65536
+            vq0206_codes_vocoder = (
+                torch.tensor([vq0206_codes], dtype=torch.long, device=self.cosy_device) - 65536
+            )
             return (
                 self.cosy_model.token2wav_nonstream(
-                    output_ids - 65536,
+                    output_ids.to(self.cosy_device) - 65536,
                     vq0206_codes_vocoder,
-                    speech_feat.to(self.device).to(torch.bfloat16),
-                    speech_embedding.to(self.device).to(torch.bfloat16),
+                    speech_feat.to(self.cosy_device).to(self.cosy_dtype),
+                    speech_embedding.to(self.cosy_device).to(self.cosy_dtype),
                 ),
                 24000,
             )
@@ -243,20 +260,22 @@ class StepAudioTTS:
 
             output_ids = self.llm.generate(
                 torch.tensor([prompt_tokens]).to(torch.long).to(self.device),
-                max_length=8192,
+                max_length=self.max_length,
                 temperature=0.7,
                 do_sample=True,
                 logits_processor=LogitsProcessorList([RepetitionAwareLogitsProcessor()]),
             )
             output_ids = output_ids[:, len(prompt_tokens) : -1]  # skip eos token
-            vq0206_codes_vocoder = torch.tensor([vq0206_codes], dtype=torch.long, device=self.device) - 65536
+            vq0206_codes_vocoder = (
+                torch.tensor([vq0206_codes], dtype=torch.long, device=self.cosy_device) - 65536
+            )
             logger.debug("Audio editing generation completed")
             return (
                 self.cosy_model.token2wav_nonstream(
-                    output_ids - 65536,
+                    output_ids.to(self.cosy_device) - 65536,
                     vq0206_codes_vocoder,
-                    speech_feat.to(self.device).to(torch.bfloat16),
-                    speech_embedding.to(self.device).to(torch.bfloat16),
+                    speech_feat.to(self.cosy_device).to(self.cosy_dtype),
+                    speech_embedding.to(self.cosy_device).to(self.cosy_dtype),
                 ),
                 24000,
             )
