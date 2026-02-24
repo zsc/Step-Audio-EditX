@@ -48,6 +48,40 @@ python3 scripts/clone_paralingustic_prompt.py \
 2) device mismatch：确认 `--device-map mps`，以及代码里显式创建的 tensor 有没有 `.to(device)`
 3) 太慢：优先缩短参考音频（<30s），或对“参考音频→token”做缓存（批量任务）
 
+### 0.5 批量 `wav2token`（输出 JSONL）
+
+任务：把一堆 wav 转成 `<audio_...>` token 字符串（与 `PROMPT.md` 的格式一致：vq06 已做 +1024，**不**额外 +65536）。
+
+```bash
+python3 scripts/batch_wav2token.py \
+  --model-path where_you_download_dir \
+  --input-dir /path/to/wavs \
+  --output-jsonl ./output/wav2token.jsonl
+```
+
+输出（每行一个 JSON）：`wav/sr/duration_sec/tokens`；失败会写到 `./output/wav2token.jsonl.errors.jsonl`。
+
+### 0.6 批量 `clone`（一次加载，多条任务）
+
+先准备一个 tasks JSONL（每行一个任务）：
+
+```jsonl
+{"id":"0001","prompt_audio_path":"examples/zero_shot_en_prompt.wav","prompt_text":"...","generated_text":"..."}
+{"id":"0002","prompt_audio_path":"/abs/path/prompt.wav","prompt_text":"...","generated_text":"...","output_wav":"custom/name.wav"}
+```
+
+运行：
+
+```bash
+python3 scripts/batch_clone.py \
+  --model-path where_you_download_dir \
+  --tasks ./tasks.jsonl \
+  --output-dir ./output/clone_batch \
+  --device-map mps \
+  --torch-dtype float16 \
+  --skip-existing
+```
+
 ## 1) 先确认“目录/入口”再写总结
 
 - 用户最初说的是“本目录 `tts/clone/mps`”，但仓库里并不存在 `tts/` 目录；真正入口是 `tts_infer.py` / `tts.py` / `tokenizer.py` / `stepvocoder/...`。
