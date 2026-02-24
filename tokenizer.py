@@ -19,7 +19,10 @@ class StepAudioTokenizer:
         self,
         encoder_path,
         model_source=ModelSource.AUTO,
-        funasr_model_id="dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online"
+        funasr_model_id="dengcunqin/speech_paraformer-large_asr_nat-zh-cantonese-en-16k-vocab8501-online",
+        funasr_device: str = "cpu",
+        torch_num_threads: int | None = None,
+        cosy_tokenizer_providers: list[str] | None = None,
     ):
         """
         Initialize StepAudioTokenizer
@@ -36,12 +39,17 @@ class StepAudioTokenizer:
                 encoder_path,
                 funasr_model_path,
                 source=model_source,
-                model_revision="main"
+                model_revision="main",
+                disable_log=True,
             )
         except Exception as e:
             print(f"Failed to load FunASR model from {model_source}: {e}")
             # Fallback to default method
-            self.funasr_model = AutoModel(model=funasr_model_path, model_revision="main")
+            self.funasr_model = AutoModel(
+                model=funasr_model_path,
+                model_revision="main",
+                disable_log=True,
+            )
 
         # Load other resource files (these are usually local files)
         kms_path = os.path.join(self.funasr_model.repo_path, "linguistic_tokenizer.npy")
@@ -54,14 +62,26 @@ class StepAudioTokenizer:
 
         self.kms = torch.tensor(np.load(kms_path))
 
-        providers = ["CUDAExecutionProvider"]
+        if torch_num_threads is None:
+            env_threads = os.environ.get("STEPAUDIO_TORCH_NUM_THREADS", "").strip()
+            if env_threads:
+                try:
+                    torch_num_threads = int(env_threads)
+                except ValueError:
+                    torch_num_threads = None
+        if torch_num_threads is not None and torch_num_threads > 0:
+            torch.set_num_threads(torch_num_threads)
+
+        if cosy_tokenizer_providers is None:
+            cosy_tokenizer_providers = ["CPUExecutionProvider"]
+
         session_option = onnxruntime.SessionOptions()
         session_option.graph_optimization_level = (
             onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
         session_option.intra_op_num_threads = 1
         self.ort_session = onnxruntime.InferenceSession(
-            cosy_tokenizer_path, sess_options=session_option, providers=providers
+            cosy_tokenizer_path, sess_options=session_option, providers=cosy_tokenizer_providers
         )
         self.chunk_size = [0, 4, 5]
         self.encoder_chunk_look_back = 4
@@ -70,6 +90,28 @@ class StepAudioTokenizer:
         self.vq02_sessions = {}
         self.vq02_lock = threading.Lock()
         self.vq06_lock = threading.Lock()
+
+        requested_device = (funasr_device or "cpu").lower()
+        if requested_device == "auto":
+            mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+            requested_device = "mps" if mps_available else "cpu"
+
+        if requested_device == "mps":
+            if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+                print("[StepAudioTokenizer] MPS not available; falling back to CPU.")
+                requested_device = "cpu"
+            else:
+                try:
+                    self.funasr_model.model = self.funasr_model.model.to("mps")
+                except Exception as e:
+                    print(f"[StepAudioTokenizer] Failed to move FunASR model to MPS: {e}. Falling back to CPU.")
+                    requested_device = "cpu"
+
+        if requested_device not in ("cpu", "mps"):
+            print(f"[StepAudioTokenizer] Unsupported funasr_device={requested_device}; using CPU.")
+            requested_device = "cpu"
+
+        self.funasr_device = requested_device
 
     def __call__(self, audio, sr):
         _, vq02, vq06 = self.wav2token(audio, sr, False)
@@ -107,28 +149,30 @@ class StepAudioTokenizer:
         return speech_tokens, vq02_ori, vq06_ori
 
     def get_vq02_code(self, audio, session_id=None, is_final=True):
-        _tmp_wav = io.BytesIO()
-        # Use soundfile instead of torchaudio to avoid torchcodec BytesIO issues
-        import soundfile as sf
-        audio_np = audio.squeeze().cpu().numpy()
-        sf.write(_tmp_wav, audio_np, 16000, format='WAV')
-        _tmp_wav.seek(0)
+        # FunASR streaming encoder supports feeding raw waveform tensors directly.
+        # Use 1-D float tensor to avoid extra WAV encode/decode overhead.
+        if isinstance(audio, torch.Tensor):
+            audio_infer = audio.squeeze(0).to(torch.float32).cpu()
+        else:
+            audio_infer = torch.as_tensor(audio).to(torch.float32).flatten().cpu()
 
         with self.vq02_lock:
             cache = {}
             if session_id in self.vq02_sessions:
                 cache = self.vq02_sessions[session_id].get("cache", {})
 
-            # Force FunASR to use CPU (use string "cpu" instead of device index)
-            res, new_cache = self.funasr_model.infer_encoder(
-                input=[_tmp_wav],
-                chunk_size=self.chunk_size,
-                encoder_chunk_look_back=self.encoder_chunk_look_back,
-                decoder_chunk_look_back=self.decoder_chunk_look_back,
-                device="cpu",
-                is_final=is_final,
-                cache=cache,
-            )
+            # Keep model/input devices aligned for speed (cuda/mps) and correctness.
+            device = self.funasr_device
+            with torch.inference_mode():
+                res, new_cache = self.funasr_model.infer_encoder(
+                    input=[audio_infer],
+                    chunk_size=self.chunk_size,
+                    encoder_chunk_look_back=self.encoder_chunk_look_back,
+                    decoder_chunk_look_back=self.decoder_chunk_look_back,
+                    device=device,
+                    is_final=is_final,
+                    cache=cache,
+                )
             c_list = []
             for j, res_ in enumerate(res):
                 feat = res_["enc_out"]
