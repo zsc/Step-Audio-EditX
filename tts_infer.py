@@ -282,9 +282,11 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--prompt-audio-path",
+        "--prompt-audio",
+        dest="prompt_audio_path",
         type=str,
         default="",
-        help="prompt audio for editing or cloning"
+        help="prompt audio for editing or cloning (alias: --prompt-audio)",
     )
 
     parser.add_argument(
