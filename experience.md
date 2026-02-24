@@ -1,5 +1,53 @@
 # 本次会话经验教训（TTS / clone / MPS）
 
+## 0) 推荐“正向使用流程”（Mac / Apple Silicon + MPS + `clone`）
+
+> 目标：在 macOS 上尽量用 **MPS** 跑 LLM/vocoder，tokenizer 走 **CPU**，先跑通再优化。
+
+### 0.1 准备模型目录（本地推理）
+
+确保 `--model-path` 对应目录结构如下（README 同款）：
+
+```text
+where_you_download_dir
+├── Step-Audio-Tokenizer
+└── Step-Audio-EditX
+```
+
+### 0.2 跑一个最小 `clone`（推荐参数）
+
+```bash
+python3 tts_infer.py \
+  --model-path where_you_download_dir \
+  --prompt-text "（参考音频对应文本）" \
+  --prompt-audio-path examples/zero_shot_en_prompt.wav \
+  --generated-text "（要合成的目标文本）" \
+  --edit-type clone \
+  --output-dir ./output/mps \
+  --device-map mps \
+  --torch-dtype float16
+```
+
+预期：
+- `./output/mps/` 下生成 `*_cloned.wav`
+- 如果 MPS 不可用，会自动/间接回退到 CPU（速度会明显下降）
+
+### 0.3 用脚本快速复现（零样本克隆 demo）
+
+```bash
+python3 scripts/clone_paralingustic_prompt.py \
+  --model-path where_you_download_dir \
+  --output-dir ./output/mps \
+  --device-map mps \
+  --torch-dtype float16
+```
+
+### 0.4 “跑不通”时的最小化处理顺序
+
+1) dtype 报错：先换 `--torch-dtype float16`，还不行再 `float32`
+2) device mismatch：确认 `--device-map mps`，以及代码里显式创建的 tensor 有没有 `.to(device)`
+3) 太慢：优先缩短参考音频（<30s），或对“参考音频→token”做缓存（批量任务）
+
 ## 1) 先确认“目录/入口”再写总结
 
 - 用户最初说的是“本目录 `tts/clone/mps`”，但仓库里并不存在 `tts/` 目录；真正入口是 `tts_infer.py` / `tts.py` / `tokenizer.py` / `stepvocoder/...`。
@@ -57,6 +105,8 @@
 
 ## 7) 仍待决的技术债（提醒）
 
-- `tokenizer.py` 目前有未提交改动：涉及 FunASR 输入形式、设备/线程、ONNX provider 默认值等；要不要纳入主线需要你决定（偏“功能/兼容性”而非“文档”范畴）。
-- 经验：**docs 提交不要混入大改动**；大改动另起 commit（甚至另起 PR）更好 review。
+本次会话里 `tokenizer.py` 也做了兼容/性能取舍（FunASR 输入、`funasr_device`、ONNX provider、线程数等），已经以独立 commit 落到主线。
 
+经验：
+- **docs/脚本** 和 **功能改动** 分开提交，review/回滚成本最低
+- 大体积模型目录（`Step-Audio-EditX/`、`Step-Audio-Tokenizer/`）保持未跟踪/ignore，避免误提交
